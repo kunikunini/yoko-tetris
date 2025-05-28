@@ -1,0 +1,156 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>横スクロールテトリス</title>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.7.0/lib/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #000;
+    }
+
+    .controller {
+      position: fixed;
+      bottom: 20px;
+      left: 0;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 20px;
+      box-sizing: border-box;
+      z-index: 100;
+    }
+
+    .dpad {
+      display: grid;
+      grid-template-columns: repeat(3, 60px);
+      grid-template-rows: repeat(3, 60px);
+      grid-gap: 5px;
+    }
+
+    .dpad button,
+    .action-buttons button,
+    .control-button {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      color: white;
+      font-size: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      outline: none;
+      transition: background-color 0.1s;
+    }
+
+    .dpad button:active,
+    .action-buttons button:active,
+    .control-button:active {
+      background-color: rgba(255, 255, 255, 0.5);
+    }
+
+    .action-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .action-buttons .a-button { background-color: rgba(0, 200, 0, 0.5); }
+    .action-buttons .b-button { background-color: rgba(200, 0, 0, 0.5); }
+
+    .control-button {
+      position: fixed;
+      z-index: 101;
+    }
+
+    .pause-button {
+      top: 20px;
+      right: 20px;
+    }
+
+    .mute-button {
+      top: 20px;
+      right: 90px;
+    }
+  </style>
+</head>
+<body>
+  <div class="controller">
+    <div class="dpad">
+      <button disabled></button>
+      <button id="up">🔼</button>
+      <button disabled></button>
+      <button id="left" disabled>◀️</button>
+      <button disabled></button>
+      <button id="right">▶️</button>
+      <button disabled></button>
+      <button id="down">🔽</button>
+      <button disabled></button>
+    </div>
+    <div class="action-buttons">
+      <button id="a-button" class="a-button">🅰️</button>
+      <button id="b-button" class="b-button">🅱️</button>
+    </div>
+  </div>
+  <button id="pause" class="control-button pause-button">⏸️</button>
+  <button id="mute" class="control-button mute-button">🔊</button>
+
+  <script>
+    let audioCtx;
+    let bgm;
+    let isMuted = false;
+    let isPaused = false;
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      bgm = new Audio('https://assets.codepen.io/21542/TinyBlocks.mp3');
+      bgm.loop = true;
+      bgm.volume = 0.2;
+
+      document.body.addEventListener('touchstart', () => {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (!isMuted && !isPaused) bgm.play();
+      }, { once: true });
+
+      document.getElementById("pause").onclick = () => {
+        isPaused = !isPaused;
+        if (isPaused) {
+          bgm.pause();
+          document.getElementById("pause").textContent = "▶️";
+        } else {
+          if (!isMuted) bgm.play();
+          document.getElementById("pause").textContent = "⏸️";
+        }
+      };
+
+      document.getElementById("mute").onclick = () => {
+        isMuted = !isMuted;
+        if (isMuted) {
+          bgm.pause();
+          document.getElementById("mute").textContent = "🔇";
+        } else {
+          if (!isPaused) bgm.play();
+          document.getElementById("mute").textContent = "🔊";
+        }
+      };
+    }
+
+    function draw() {
+      background(30);
+      fill(255);
+      textAlign(CENTER, CENTER);
+      textSize(24);
+      text("横スクロールテトリス：準備中の画面です", width / 2, height / 2);
+    }
+  </script>
+</body>
+</html>
