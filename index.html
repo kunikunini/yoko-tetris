@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>横スクロールテトリス</title>
+<style>
+html,body{margin:0;padding:0;overflow:hidden;background:#111;font-family:sans-serif;}
+canvas{display:block;margin:0 auto;}
+.controller{position:fixed;bottom:10px;left:10px;display:flex;gap:40px;z-index:10}
+.dpad{display:grid;grid-template-columns:repeat(3,60px);grid-template-rows:repeat(3,60px);gap:4px}
+.dpad button,.ab button,.util button{width:60px;height:60px;border-radius:50%;border:2px solid #fff;color:#fff;background:rgba(255,255,255,.1);font-size:22px;display:flex;align-items:center;justify-content:center}
+.dpad button:active,.ab button:active,.util button:active{background:rgba(255,255,255,.4)}
+.ab{display:flex;flex-direction:column;gap:20px}
+.ab .a{background:#0a0}.ab .b{background:#a00}
+.ab .a:active{background:#0f0}.ab .b:active{background:#f00}
+.util{position:fixed;top:10px;right:10px;display:flex;gap:10px}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+</head>
+<body>
+<div class="util">
+ <button id="mute">🔊</button>
+ <button id="pause">⏸️</button>
+</div>
+<div class="controller">
+ <div class="dpad">
+  <button></button><button id="up">🔼</button><button></button>
+  <button id="left" disabled>◀️</button><button></button><button id="right">▶️</button>
+  <button></button><button id="down">🔽</button><button></button>
+ </div>
+ <div class="ab">
+   <button class="a" id="a">A</button>
+   <button class="b" id="b">B</button>
+ </div>
+</div>
+
+<script>
+let bgm=new Audio("https://assets.codepen.io/21542/TinyBlocks.mp3");
+bgm.loop=true;bgm.volume=0.3;
+document.body.addEventListener("touchstart",()=>{if(bgm.paused)bgm.play().catch(()=>{});},{once:true});
+
+const COLS=16,ROWS=10,BS=30;
+let grid=[...Array(ROWS)].map(()=>Array(COLS).fill(0));
+const SHAPES=[[[1,1,1,1]],[[1,1],[1,1]],[[0,1,0],[1,1,1]],[[0,1,1],[1,1,0]],[[1,1,0],[0,1,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]]];
+const COLORS=["cyan","yellow","purple","lime","red","blue","orange"];
+
+class Piece{
+ constructor(){this.shape=random(SHAPES);this.color=random(COLORS);this.x=0;this.y=int(ROWS/2)-int(this.shape.length/2);}
+ draw(){fill(this.color);stroke(200);
+  for(let r=0;r<this.shape.length;r++)for(let c=0;c<this.shape[r].length;c++)if(this.shape[r][c])
+    rect((this.x+c)*BS,(this.y+r)*BS,BS,BS);}
+ collides(nx,ny,s=this.shape){for(let r=0;r<s.length;r++)for(let c=0;c<s[r].length;c++)if(s[r][c]){
+  let xx=nx+c,yy=ny+r;if(xx<0||yy<0||yy>=ROWS||xx>=COLS||grid[yy][xx])return true;}} 
+ move(dx,dy){if(!this.collides(this.x+dx,this.y+dy)){this.x+=dx;this.y+=dy;return true;}return false;}
+ rotate(clock=true){let rows=this.shape.length,cols=this.shape[0].length;
+  let ns=[...Array(cols)].map(()=>Array(rows).fill(0));
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)
+    ns[clock?c:cols-1-c][clock?rows-1-r:r]=this.shape[r][c];
+  if(!this.collides(this.x,this.y,ns))this.shape=ns;}
+ lock(){for(let r=0;r<this.shape.length;r++)for(let c=0;c<this.shape[r].length;c++)if(this.shape[r][c])grid[this.y+r][this.x+c]=this.color;}
+}
+let cur,interval=30,tick=0,paused=false,muted=false,fast=false,score=0;
+function spawn(){cur=new Piece();if(cur.collides(cur.x,cur.y)){noLoop();alert("GAME OVER");}}
+function setup(){createCanvas(COLS*BS,ROWS*BS);spawn();}
+function draw(){background(30);
+ tick++;if(!paused&&tick>(fast?5:interval)){if(!cur.move(1,0)){cur.lock();clearLines();spawn();}tick=0;}
+ stroke(60);noFill();for(let r=0;r<=ROWS;r++)line(0,r*BS,width,r*BS);for(let c=0;c<=COLS;c++)line(c*BS,0,c*BS,height);
+ for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if(grid[r][c]){fill(grid[r][c]);stroke(200);rect(c*BS,r*BS,BS,BS);}
+ cur.draw();fill(255);noStroke();textSize(16);text("Score:"+score,10,20);}
+function clearLines(){let cleared=0;for(let c=0;c<COLS;c++){let full=true;for(let r=0;r<ROWS;r++)if(!grid[r][c]){full=false;break;}
+ if(full){cleared++;for(let cc=c;cc>0;cc--)for(let r=0;r<ROWS;r++)grid[r][cc]=grid[r][cc-1];for(let r=0;r<ROWS;r++)grid[r][0]=0;}}
+ score+=cleared*100;}
+select("#right").mousePressed(()=>cur.move(1,0));
+select("#down").mousePressed(()=>fast=true).mouseReleased(()=>fast=false);
+select("#up").mousePressed(()=>cur.move(0,-1));
+select("#a").mousePressed(()=>cur.rotate(true));
+select("#b").mousePressed(()=>cur.rotate(false));
+select("#pause").mousePressed(function(){paused=!paused;this.textContent=paused?"▶️":"⏸️";});
+select("#mute").mousePressed(function(){muted=!muted;if(muted){bgm.pause();this.textContent="🔇";}else{bgm.play();this.textContent="🔊";}});
+["right","down","up","a","b"].forEach(id=>{let el=document.getElementById(id);
+ el.addEventListener("touchstart",e=>{e.preventDefault();el.dispatchEvent(new MouseEvent("mousedown"));});
+ el.addEventListener("touchend",e=>{e.preventDefault();el.dispatchEvent(new MouseEvent("mouseup"));});});
+</script>
+</body>
+</html>
