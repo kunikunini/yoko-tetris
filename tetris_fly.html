@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Tetris Fly</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+    * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-tap-highlight-color:transparent; }
+    html,body { width:100%; height:100%; background:#121212; color:white; font-family:'Press Start 2P',sans-serif; overflow:hidden; }
+    .container { display:flex; flex-direction:column; height:100vh; }
+    .game-area { flex:1; position:relative; display:flex; justify-content:center; align-items:flex-start; padding-top:60px; }
+    canvas#game { border:4px solid #2196f3; background:#111; image-rendering:pixelated; margin-top:80px; width:95%; height:calc(100% - 80px); }
+    .score, .time, .level { position:absolute; right:10px; font-size:12px; text-shadow:1px 1px #000; }
+    .score { top:10px; } .time { top:28px; } .level { top:46px; }
+    .next-container { position:absolute; top:10px; left:10px; display:flex; flex-direction:column; align-items:center; font-size:12px; text-shadow:1px 1px #000; }
+    .next-canvas { border:2px solid #2196f3; background:#111; margin-top:4px; }
+    .title-box { position:absolute; top:10px; left:50%; transform:translateX(-50%); font-size:20px; text-shadow:1px 1px #000; }
+    .overlay { position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:5; }
+    .overlay.hidden { display:none; }
+    .overlay button { font-family:'Press Start 2P',sans-serif; padding:8px 16px; background:#0cf; border:none; cursor:pointer; animation:pulse 1s infinite; }
+    .overlay h1 { color:red; font-size:24px; margin-bottom:20px; text-shadow:1px 1px #000; }
+    @keyframes pulse { 0%,100%{transform:scale(1.3);}50%{transform:scale(1.4);} }
+    .controls { display:flex; justify-content:space-between; align-items:flex-end; padding:10px; background:#121212;}
+    .dpad { display:grid; grid-template-columns:50px 50px 50px; grid-template-rows:50px 50px 50px; gap:5px; }
+    .dpad button { width:50px; height:50px; font-size:20px; font-family:'Press Start 2P'; border:2px solid #2196f3; background:white; color:black; border-radius:8px; }
+    #pauseBtn { background:red; color:white; }
+    .ab-buttons { display:flex; gap:20px; margin-bottom:40px; }
+    .ab-buttons button { width:60px; height:60px; font-size:20px; font-family:'Press Start 2P'; border-radius:50%; border:none; color:black; }
+    .a-btn { background:yellow; } .b-btn { background:#2196f3; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="game-area">
+      <div class="score" id="score">Score: 0</div>
+      <div class="time" id="time">Time: 00:00</div>
+      <div class="level" id="level">Level: 0</div>
+      <div class="next-container">
+        <div>NEXT</div>
+        <canvas id="next" class="next-canvas" width="80" height="80"></canvas>
+      </div>
+      <div class="title-box">Tetris Fly</div>
+      <canvas id="game"></canvas>
+      <div id="startScreen" class="overlay">
+        <button id="startBtn">START</button>
+      </div>
+      <div id="gameOver" class="overlay hidden">
+        <h1>GAME OVER</h1>
+        <button id="retryBtn">RETRY</button>
+        <button id="endBtn">END</button>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="dpad">
+        <button id="left">◀️</button>
+        <button id="pauseBtn">■</button>
+        <button id="right">▶️</button>
+      </div>
+      <div class="ab-buttons">
+        <button class="a-btn">A</button>
+        <button class="b-btn">B</button>
+        <button id="upBtn">🔼</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- ゲームコード開始 ---------------------------------------------------
+    const COLS = 10, ROWS = 16;
+    const COLORS = ['cyan','yellow','purple','lime','red','blue','orange'];
+    const SHAPES = [ [[1,1,1,1]], [[1,1],[1,1]], [[0,1,0],[1,1,1]], [[0,1,1],[1,1,0]], [[1,1,0],[0,1,1]], [[1,0,0],[1,1,1]], [[0,0,1],[1,1,1]] ];
+    const gameCanvas = document.getElementById('game');
+    const nextCanvas = document.getElementById('next');
+    const ctx = gameCanvas.getContext('2d');
+    const nextCtx = nextCanvas.getContext('2d');
+
+    let BLOCK, board, cur, nextP, score=0, level=0, speed=1, dropInt=800, dropCnt=0, lastTime=0, startTime=0, paused=true, lockT=null, anim;
+
+    class Piece {
+      constructor(s,c){this.shape=s; this.color=c; this.x=0; this.y=s.length-1;}
+    }
+
+    function init(){
+      BLOCK = Math.floor(Math.min(window.innerHeight-150, window.innerWidth*0.95)/(ROWS));
+      gameCanvas.width=COLS*BLOCK; gameCanvas.height=ROWS*BLOCK;
+      initBoard(); drawAll();
+    }
+
+    function initBoard(){
+      board = Array.from({length:ROWS},()=>Array(COLS).fill(0));
+    }
+
+    function rnd(){let i=Math.floor(Math.random()*SHAPES.length); return new Piece(SHAPES[i], COLORS[i]);}
+
+    function spawn(){
+      cur = nextP || rnd();
+      nextP = rnd();
+      cur.x = Math.floor(COLS/2)-Math.floor(cur.shape[0].length/2);
+      drawNext(); cancelLock();
+      if(collide(cur.x,cur.y,cur.shape)){end();}
+    }
+
+    function collide(x,y,shape){
+      for(let r=0;r<shape.length;r++)for(let c=0;c<shape[r].length;c++){
+        if(shape[r][c]){
+          let yy=y-r, xx=x+c;
+          if(xx<0||xx>=COLS||yy>=ROWS||board[yy][xx])return true;
+        }
+      }
+      return false;
+    }
+
+    function rotate(cw){
+      let s=cur.shape, rows=s.length, cols=s[0].length;
+      let ns = Array.from({length:cols},()=>Array(rows).fill(0));
+      for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+        ns[c][cw?rows-1-r:r] = s[r][c];
+      }
+      if(!collide(cur.x,cur.y,ns)) cur.shape=ns;
+    }
+
+    function lockDelay(){
+      if(!lockT) {
+        lockT = setTimeout(()=>{
+          place(); lockT=null;
+        },500);
+      }
+    }
+
+    function cancelLock(){
+      if(lockT){clearTimeout(lockT); lockT=null;}
+    }
+
+    function place(){
+      for(let r=0;r<cur.shape.length;r++)for(let c=0;c<cur.shape[r].length;c++){
+        if(cur.shape[r][c]) board[cur.y-r][cur.x+c]=cur.color;
+      }
+      clearLines();
+      spawn();
+    }
+
+    function clearLines(){
+      let fl=[];
+      for(let r=0;r<ROWS;r++){
+        if(board[r].every(v=>v)){ fl.push(r); }
+      }
+      if(fl.length){
+        flashLines(fl);
+        score += fl.length*100;
+        level = Math.floor(score/500);
+        document.getElementById('score').textContent=`Score: ${score}`;
+        document.getElementById('level').textContent=`Level: ${level}`;
+      }
+    }
+
+    function flashLines(lines){
+      lines.forEach(r=>board[r]=board[r].map(_=>'#fff'));
+      drawAll();
+      setTimeout(()=>{
+        for(let r of lines){
+          board.splice(r,1);
+          board.unshift(Array(COLS).fill(0));
+        }
+        drawAll();
+      },200);
+    }
+
+    function drawAll(){
+      ctx.fillStyle='#111'; ctx.fillRect(0,0,gameCanvas.width,gameCanvas.height);
+      for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+        let col=board[r][c];
+        if(col){
+          ctx.fillStyle=col; ctx.fillRect(c*BLOCK,(ROWS-1-r)*BLOCK,BLOCK,BLOCK);
+          ctx.strokeStyle='#222'; ctx.strokeRect(c*BLOCK,(ROWS-1-r)*BLOCK,BLOCK,BLOCK);
+        }
+      }
+      drawCur(); drawNext();
+    }
+
+    function drawCur(){
+      let s=cur.shape;
+      for(let r=0;r<s.length;r++)for(let c=0;c<s[r].length;c++){
+        if(s[r][c]){
+          ctx.fillStyle=cur.color;
+          ctx.fillRect((cur.x+c)*BLOCK,(ROWS-1-(cur.y-r))*BLOCK,BLOCK,BLOCK);
+          ctx.strokeStyle='#222'; ctx.strokeRect((cur.x+c)*BLOCK,(ROWS-1-(cur.y-r))*BLOCK,BLOCK,BLOCK);
+        }
+      }
+    }
+
+    function drawNext(){
+      nextCtx.fillStyle='#111'; nextCtx.fillRect(0,0,80,80);
+      let s=nextP.shape, bs=80/4;
+      let ox=(80-s[0].length*bs)/2, oy=(80-s.length*bs)/2;
+      nextP.shape.forEach((row,r)=>row.forEach((v,c)=>{
+        if(v){
+          nextCtx.fillStyle=nextP.color;
+          nextCtx.fillRect(ox+c*bs,oy+r*bs,bs,bs);
+          nextCtx.strokeStyle='#222'; nextCtx.strokeRect(ox+c*bs,oy+r*bs,bs,bs);
+        }
+      }));
+    }
+
+    function update(t=0){
+      let dt=t-lastTime;
+      lastTime=t;
+      if(!paused){
+        dropCnt += dt*speed;
+        if(collide(cur.x,cur.y+1,cur.shape)) lockDelay();
+        else{
+          cancelLock();
+          if(dropCnt>dropInt){
+            cur.y++; dropCnt=0;
+          }
+        }
+      }
+      let et = Math.floor((t-startTime)/1000);
+      document.getElementById('time').textContent=`Time: ${String(et>>1).padStart(2,'0')}:${String(et%60).padStart(2,'0')}`;
+      drawAll();
+      anim=requestAnimationFrame(update);
+    }
+
+    function startGame(){
+      paused=false; score=0; level=0; speed=1;
+      document.getElementById('score').textContent=`Score: ${score}`;
+      document.getElementById('level').textContent=`Level: ${level}`;
+      initBoard(); nextP=rnd(); spawn();
+      startTime=lastTime=performance.now();
+      document.getElementById('startScreen').classList.add('hidden');
+      document.getElementById('gameOver').classList.add('hidden');
+      if(anim) cancelAnimationFrame(anim); update();
+    }
+
+    function end(){
+      paused=true;
+      document.getElementById('gameOver').classList.remove('hidden');
+    }
+
+    // --- イベントハンドラ ---
+    document.getElementById('startBtn').onclick=startGame;
+    document.getElementById('retryBtn').onclick=startGame;
+    document.getElementById('endBtn').onclick=()=>location.reload();
+
+    // コントロール
+    document.getElementById('left').addEventListener('pointerdown',()=>speed=3);
+    document.getElementById('left').addEventListener('pointerup',()=>speed=1);
+
+    document.getElementById('right').addEventListener('pointerdown',()=>{cur.x++;});
+    document.getElementById('right').addEventListener('pointerup',()=>{});
+
+    document.getElementById('pauseBtn').addEventListener('pointerdown',()=>{
+      paused=!paused;
+    });
+
+    document.getElementById('upBtn').addEventListener('pointerdown',()=>{
+      speed=3;
+    });
+    document.getElementById('upBtn').addEventListener('pointerup',()=>speed=1);
+
+    document.querySelector('.a-btn').addEventListener('pointerdown',()=>rotate(true));
+    document.querySelector('.b-btn').addEventListener('pointerdown',()=>rotate(false));
+
+    window.addEventListener('resize',init);
+    init();
+    // --- ゲームコード終了 ---------------------------------------------------
+  </script>
+</body>
+</html>
