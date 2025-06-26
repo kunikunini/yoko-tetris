@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>立体オセロ 3D</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      font-family: 'Courier New', monospace;
+      color: #fff;
+      overflow: hidden;
+      user-select: none;
+    }
+    .game-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px;
+    }
+    .header {
+      text-align: center;
+    }
+    .title {
+      font-size: 22px;
+      color: #00ff88;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    }
+    .turn-label {
+      font-size: 16px;
+      color: #ffaa00;
+      margin-top: 4px;
+    }
+    .cube-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      perspective: 800px;
+    }
+    .cube-3d {
+      transform-style: preserve-3d;
+      transform: rotateX(-15deg) rotateY(25deg);
+      transition: transform 0.2s ease;
+      position: relative;
+      width: 60vw;
+      height: 60vw;
+      max-width: 300px;
+      max-height: 300px;
+    }
+    .cube-face {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 2px;
+      padding: 4px;
+      border: 2px solid #333;
+    }
+    .front  { transform: translateZ(30vw); }
+    .back   { transform: translateZ(-30vw) rotateY(180deg); }
+    .right  { transform: rotateY(90deg) translateZ(30vw); }
+    .left   { transform: rotateY(-90deg) translateZ(30vw); }
+    .top    { transform: rotateX(90deg) translateZ(30vw); }
+    .bottom { transform: rotateX(-90deg) translateZ(30vw); }
+    .tile {
+      width: 100%;
+      height: 100%;
+      border: 1px solid #000;
+      border-radius: 50%;
+      background: #888;
+      cursor: pointer;
+    }
+    .black { background: #000000; }
+    .white { background: #ffffff; }
+    .footer {
+      text-align: center;
+      font-size: 14px;
+      margin-bottom: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <div class="header">
+      <div class="title">立体オセロ 3D</div>
+      <div class="turn-label" id="turnLabel">TURN: ⚪ White</div>
+    </div>
+    <div class="cube-area">
+      <div class="cube-3d" id="cube3d">
+        <div class="cube-face front" id="front"></div>
+        <div class="cube-face back" id="back"></div>
+        <div class="cube-face right" id="right"></div>
+        <div class="cube-face left" id="left"></div>
+        <div class="cube-face top" id="top"></div>
+        <div class="cube-face bottom" id="bottom"></div>
+      </div>
+    </div>
+    <div class="footer">
+      スワイプで視点回転できます
+    </div>
+  </div>
+  <script>
+    const FACES = ['front','back','right','left','top','bottom'];
+    const board = Array(3).fill(null).map(()=>Array(3).fill(null).map(()=>Array(3).fill('empty')));
+    let turn = 'white';
+
+    function idxToCoord(face, idx) {
+      const r = Math.floor(idx / 3);
+      const c = idx % 3;
+      switch(face) {
+        case 'front':  return [c, r, 2];
+        case 'back':   return [2 - c, r, 0];
+        case 'right':  return [2, r, 2 - c];
+        case 'left':   return [0, r, c];
+        case 'top':    return [c, 0, r];
+        case 'bottom': return [c, 2, 2 - r];
+      }
+    }
+
+    function coordToFaces(x, y, z) {
+      const list = [];
+      if (z === 2) list.push(['front', y * 3 + x]);
+      if (z === 0) list.push(['back', y * 3 + (2 - x)]);
+      if (x === 2) list.push(['right', y * 3 + (2 - z)]);
+      if (x === 0) list.push(['left', y * 3 + z]);
+      if (y === 0) list.push(['top', z * 3 + x]);
+      if (y === 2) list.push(['bottom', (2 - z) * 3 + x]);
+      return list;
+    }
+
+    function initBoard() {
+      for(let x=0;x<3;x++)
+        for(let y=0;y<3;y++)
+          for(let z=0;z<3;z++)
+            board[x][y][z] = 'empty';
+      updateDisplay();
+    }
+
+    function updateDisplay() {
+      FACES.forEach(face => {
+        const el = document.getElementById(face);
+        el.innerHTML = '';
+        for(let i=0;i<9;i++) {
+          const tile = document.createElement('div');
+          tile.className = 'tile';
+          const [x,y,z] = idxToCoord(face, i);
+          const state = board[x][y][z];
+          if (state === 'white') tile.classList.add('white');
+          if (state === 'black') tile.classList.add('black');
+          tile.addEventListener('click', () => placeStone(face, i));
+          el.appendChild(tile);
+        }
+      });
+    }
+
+    function inside(x,y,z){return x>=0&&x<3&&y>=0&&y<3&&z>=0&&z<3;}
+
+    function getFlips(x,y,z,color,face){
+      const dirs = [];
+      // 2D directions on same face
+      if(face==='front'||face==='back')
+        dirs.push(...[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[1,1,0],[1,-1,0],[-1,1,0],[-1,-1,0]]);
+      if(face==='left'||face==='right')
+        dirs.push(...[[0,1,0],[0,-1,0],[0,0,1],[0,0,-1],[0,1,1],[0,1,-1],[0,-1,1],[0,-1,-1]]);
+      if(face==='top'||face==='bottom')
+        dirs.push(...[[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[1,0,1],[1,0,-1],[-1,0,1],[-1,0,-1]]);
+      // axis directions across faces
+      dirs.push(...[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]);
+
+      const opponent = color==='white'?'black':'white';
+      const flips = [];
+      dirs.forEach(d => {
+        let tx=x+d[0], ty=y+d[1], tz=z+d[2];
+        const line=[];
+        while(inside(tx,ty,tz)&&board[tx][ty][tz]===opponent){
+          line.push([tx,ty,tz]);
+          tx+=d[0]; ty+=d[1]; tz+=d[2];
+        }
+        if(line.length&&inside(tx,ty,tz)&&board[tx][ty][tz]===color)
+          flips.push(...line);
+      });
+      return flips;
+    }
+
+    function placeStone(face, index) {
+      const [x,y,z] = idxToCoord(face, index);
+      if (board[x][y][z] !== 'empty') return;
+      const flips = getFlips(x,y,z,turn,face);
+      if(flips.length===0) return;
+      board[x][y][z] = turn;
+      flips.forEach(([fx,fy,fz])=>board[fx][fy][fz]=turn);
+      turn = (turn === 'white') ? 'black' : 'white';
+      document.getElementById("turnLabel").textContent = `TURN: ${turn === 'white' ? '⚪ White' : '⚫ Black'}`;
+      updateDisplay();
+      checkGameEnd();
+    }
+
+    function checkGameEnd(){
+      let filled=0,white=0,black=0;
+      for(let x=0;x<3;x++) for(let y=0;y<3;y++) for(let z=0;z<3;z++){
+        if(x===1&&y===1&&z===1) continue; // center not used
+        const s=board[x][y][z];
+        if(s!=='empty'){filled++; if(s==='white')white++; else black++;}
+      }
+      if(filled===26){
+        const winner = white===black ? 'Draw' : (white>black?'White':'Black');
+        alert(`Game Over\nWhite:${white} Black:${black}\nWinner:${winner}`);
+        initBoard();
+      }
+    }
+
+    let sx, sy, rx = -15, ry = 25;
+    const cubeEl = document.getElementById("cube3d");
+    cubeEl.addEventListener("touchstart", e => {
+      const t = e.touches[0];
+      sx = t.clientX;
+      sy = t.clientY;
+    });
+    cubeEl.addEventListener("touchmove", e => {
+      e.preventDefault();
+      const t = e.touches[0];
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+      rx -= dy * 0.3;
+      ry += dx * 0.3;
+      rx = Math.max(-90, Math.min(90, rx));
+      cubeEl.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+      sx = t.clientX;
+      sy = t.clientY;
+    }, { passive: false });
+
+    initBoard();
+  </script>
+</body>
+</html>
